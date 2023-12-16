@@ -9,9 +9,10 @@ class UNet2D(nn.Module):
 
         super(UNet2D, self).__init__()
         n_filters = 128
-
+        
         # Convolutional layers with kernel size 3 and no padding (valid)
         # Encoder
+        self.batchnorm_1 = nn.BatchNorm2d(1, device=self.device)
         self.enc_conv1_1 = nn.Conv2d(1, n_filters, kernel_size=3, padding='valid', device=self.device)
         self.enc_conv1_2 = nn.Conv2d(n_filters, n_filters, kernel_size=3, padding='valid', device=self.device)
         self.enc_conv1_3 = nn.Conv2d(n_filters, n_filters, kernel_size=3, padding='valid', device=self.device)
@@ -42,7 +43,8 @@ class UNet2D(nn.Module):
     def forward(self, x):
         # Encoder
         x = x.to(self.device)
-        x1 = nn.ReLU()(self.enc_conv1_1(x))
+        x1 = self.batchnorm_1(x)
+        x1 = nn.ReLU()(self.enc_conv1_1(x1))
         x1 = nn.ReLU()(self.enc_conv1_2(x1))
         x1 = nn.ReLU()(self.enc_conv1_3(x1))
 
@@ -75,7 +77,7 @@ class UNet2D(nn.Module):
         
         return x_out
 
-    def fit(self, train_loader, num_epochs, device, patch_size, verbose=True):
+    def fit(self, train_loader, num_epochs, device, patch_size, verbose=True, lr=1e-4):
         optimizer = torch.optim.Adam(self.parameters())
         for epoch in range(num_epochs):
             self.train()
@@ -92,5 +94,5 @@ class UNet2D(nn.Module):
                 optimizer.step()
 
                 if verbose and i % 1 == 0:
-                    print(f'Epoch : {epoch} [{i * len(images)}/{len(train_loader.dataset)} ({100. * i / len(train_loader):.0f}%)]\tLoss: {loss:.6f}')
+                   print(f'Epoch : {epoch} [{i * len(images)}/{len(train_loader.dataset)} ({100. * i / len(train_loader):.0f}%)]\tLoss: {loss:.6f}')
                     
