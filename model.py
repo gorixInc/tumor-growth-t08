@@ -2,17 +2,199 @@ from data_preprocessing import dice_coefficient
 import torch.nn as nn
 import torch
 from torchvision import transforms
+import torch.nn.functional as F
 
+def dice_loss(outputs, masks): 
+    return -1 * dice_coefficient(outputs, masks).mean()
+
+class DoubleConv(nn.Module):
+    def __init__(self, in_filters, out_filters, device):
+        super().__init__()
+        self.double_conv = nn.Sequential(
+            nn.Conv2d(in_filters, out_filters, kernel_size=3, padding='valid', device=device, padding_mode='reflect'),
+            nn.BatchNorm2d(out_filters, device=device),
+            nn.ReLU(), 
+            nn.Conv2d(out_filters, out_filters, kernel_size=3, padding='valid', device=device, padding_mode='reflect'),
+            nn.BatchNorm2d(out_filters, device=device),
+            nn.ReLU(), 
+        )
+
+    def forward(self, x):
+        return self.double_conv(x)
+    
+class Compress(nn.Module):
+    def __init__(self, in_filters, out_filters, device, maxpool=True):
+        super().__init__()
+        self.maxpool = maxpool
+        self.pool = nn.MaxPool2d(kernel_size=2)
+        self.conv = DoubleConv(in_filters, out_filters, device)
+
+    def forward(self, x):
+        if self.maxpool:
+            x = self.pool(x)
+        return self.conv(x)
+
+class Expand(nn.Module):
+    def __init__(self, in_filters, out_filters, device):
+        super().__init__()
+        self.upscale = nn.ConvTranspose2d(in_filters, in_filters//2, kernel_size=2, stride=2, device=device)
+        #self.upscale = nn.ConvTranspose2d(in_filters, in_filters, kernel_size=2, stride=2, device=device)
+        self.conv = DoubleConv(in_filters, out_filters, device)
+
+    def forward(self, x_from_down, x_current):
+        x_current = self.upscale(x_current)
+        delta = [x1_size - x4_size for x1_size, x4_size in zip(x_from_down.size()[2:], x_current.size()[2:])]
+        crop_x_from_down = x_from_down[:, :, delta[0]//2:x_from_down.size(2)-delta[0]//2, delta[1]//2:x_from_down.size(3)-delta[1]//2]
+        out = torch.cat((x_current, crop_x_from_down), dim=1)
+        return self.conv(out)
+
+class OutConv(nn.Module):
+    def __init__(self, in_filters, out_filters, device):
+        super().__init__()
+        self.conv = nn.Conv2d(in_filters, out_filters, kernel_size=1, device=device, padding_mode='reflect')
+
+    def forward(self, x):
+        x = self.conv(x)
+        return x
+
+
+class Unet2D_v2(nn.Module):
+    def __init__(self, do_softmax=False):
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        super(Unet2D_v2, self).__init__()
+        self.do_softmax = do_softmax
+        self.input_conv = DoubleConv(1, 256, self.device)
+        self.comp1 = Compress(256, 512, self.device)
+        self.comp2 = Compress(512, 1024, self.device)
+        self.exp1 = Expand(1024, 512, self.device)
+        self.exp2 = Expand(512, 256, self.device)
+        self.out_conv = OutConv(256, 1, self.device)
+        self.softmax = nn.Softmax2d()
+
+    def forward(self, x):
+        x1 = self.input_conv(x)
+
+        x2 = self.comp1(x1)
+        x3 = self.comp2(x2)
+        x = self.exp1(x2, x3)
+        x = self.exp2(x1, x)
+        out = self.out_conv(x)
+        if self.do_softmax:
+            out = self.softmax(out)
+        return out
+
+    def fit(self, train_loader, num_epochs, device, patch_size, verbose=True, lr=1e-4,
+            loss_func=None, softmax=False):
+        optimizer = torch.optim.Adam(self.parameters())
+        if loss_func is None:
+            loss_func = dice_loss
+        for epoch in range(num_epochs):
+            self.train()
+            for i, (images, masks) in enumerate(train_loader):
+                images, masks = images.float().to(device), masks.to(device)
+                optimizer.zero_grad()
+                outputs = self.forward(images)
+                center_crop = transforms.CenterCrop((outputs.shape[-1], outputs.shape[-1]))
+                resized_masks = center_crop(masks)
+                
+                if softmax: 
+                    resized_masks = nn.Softmax2d()(resized_masks)
+
+                loss = loss_func(outputs, torch.tensor(resized_masks).float())
+                loss.backward()
+                optimizer.step()
+
+                if verbose and i % 1 == 0:
+                   print(f'Epoch : {epoch} [{i * len(images)}/{len(train_loader.dataset)} ({100. * i / len(train_loader):.0f}%)]\tLoss: {loss:.6f}')
+
+
+
+
+class ConvStack(nn.Module):
+    def __init__(self, in_channels, out_channels, device) -> None:
+        super().__init__()
+        self.f = nn.Sequential(nn.Conv2d(in_channels, out_channels, kernel_size=3, padding='valid', device=device),
+            nn.BatchNorm2d(out_channels, device=device),
+            nn.ReLU())
+
+    def forward(self, x):
+        return self.f(x)
+
+class Unet_classic(nn.Module):
+    def __init__(self):
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        super(Unet_classic, self).__init__()
+        n_filters = 128
+        self.enc_conv11 = ConvStack(1, n_filters, device=self.device)
+        self.enc_conv12 =  ConvStack(n_filters, n_filters, device=self.device)
+        self.enc_conv13 =  ConvStack(n_filters, n_filters, device=self.device)
+        self.pool1 = nn.MaxPool2d(kernel_size=2)
+
+        self.enc_conv21 = ConvStack(n_filters, n_filters, device=self.device)
+        self.enc_conv22 = ConvStack(n_filters, n_filters, device=self.device)
+        self.enc_conv23 = ConvStack(n_filters, n_filters, device=self.device)
+        self.enc_conv24 = ConvStack(n_filters, n_filters, device=self.device)
+
+        self.upscale1 = nn.ConvTranspose2d(n_filters, n_filters, kernel_size=2, stride=2, device=self.device)
+
+        self.dec_conv1 = ConvStack(2*n_filters, 2*n_filters, device=self.device)
+        self.dec_conv2 = ConvStack(2*n_filters, 2*n_filters, device=self.device)
+        self.dec_conv3 = ConvStack(2*n_filters, n_filters, device=self.device)
+
+        self.final_conv = nn.Conv2d(n_filters, 1, kernel_size=1, device=self.device)
+    
+    def forward(self, x):
+        x1 = self.enc_conv11(x)
+        x1 = self.enc_conv12(x1)
+        x1 = self.enc_conv13(x1)
+
+        x2 = self.pool1(x1)
+        x2 = self.enc_conv21(x2)
+        x2 = self.enc_conv22(x2)
+        x2 = self.enc_conv23(x2)
+        x2 = self.enc_conv24(x2)
+
+        x3 = self.upscale1(x2)
+        delta = [x1_size - x3_size for x1_size, x3_size in zip(x1.size()[2:], x3.size()[2:])]
+        crop_x1 = x1[:, :, delta[0]//2:x1.size(2)-delta[0]//2, delta[1]//2:x1.size(3)-delta[1]//2]
+        x3 = torch.cat((x3, crop_x1), dim=1)
+
+        x3 = self.dec_conv1(x3)
+        x3 = self.dec_conv2(x3)
+        x3 = self.dec_conv3(x3)
+
+        x_out = self.final_conv(x3)
+
+        return x_out
+    
+    def fit(self, train_loader, num_epochs, device, patch_size, verbose=True, lr=1e-4):
+            optimizer = torch.optim.Adam(self.parameters())
+            for epoch in range(num_epochs):
+                self.train()
+                for i, (images, masks) in enumerate(train_loader):
+                    images, masks = images.float().to(device), masks.to(device)
+                    optimizer.zero_grad()
+                    outputs = self.forward(images)
+                    
+                    center_crop = transforms.CenterCrop((outputs.shape[-1], outputs.shape[-1]))
+                    resized_masks = center_crop(masks)
+                    loss = -1 * dice_coefficient(outputs, resized_masks).mean()
+                    loss.backward()
+                    optimizer.step()
+
+                    if verbose and i % 1 == 0:
+                        print(f'Epoch : {epoch} [{i * len(images)}/{len(train_loader.dataset)} ({100. * i / len(train_loader):.0f}%)]\tLoss: {loss:.6f}')
+                        
+
+#class conv2d()
 class UNet2D(nn.Module):
     def __init__(self):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
         super(UNet2D, self).__init__()
         n_filters = 128
-        
         # Convolutional layers with kernel size 3 and no padding (valid)
         # Encoder
-        self.batchnorm_1 = nn.BatchNorm2d(1, device=self.device)
+        #self.batchnorm_1 = nn.BatchNorm2d(1, device=self.device)
         self.enc_conv1_1 = nn.Conv2d(1, n_filters, kernel_size=3, padding='valid', device=self.device)
         self.enc_conv1_2 = nn.Conv2d(n_filters, n_filters, kernel_size=3, padding='valid', device=self.device)
         self.enc_conv1_3 = nn.Conv2d(n_filters, n_filters, kernel_size=3, padding='valid', device=self.device)
@@ -43,11 +225,9 @@ class UNet2D(nn.Module):
     def forward(self, x):
         # Encoder
         x = x.to(self.device)
-        x1 = self.batchnorm_1(x)
-        x1 = nn.ReLU()(self.enc_conv1_1(x1))
+        x1 = nn.ReLU()(self.enc_conv1_1(x))
         x1 = nn.ReLU()(self.enc_conv1_2(x1))
         x1 = nn.ReLU()(self.enc_conv1_3(x1))
-
         x2 = self.pool1(x1)
 
         # Middle encoder
@@ -57,23 +237,21 @@ class UNet2D(nn.Module):
         x2 = nn.ReLU()(self.encode_conv4(x2))
 
         # Dropout
-        x2 = self.dropout1(x2)
+        #x2 = self.dropout1(x2)
 
         # Upscale
         x3 = self.upscale1(x2)
-
         # Concatenation
         delta = [x1_size - x3_size for x1_size, x3_size in zip(x1.size()[2:], x3.size()[2:])]
         crop_x1 = x1[:, :, delta[0]//2:x1.size(2)-delta[0]//2, delta[1]//2:x1.size(3)-delta[1]//2]
         x3 = torch.cat((x3, crop_x1), dim=1)
-
         # Expansion
         x3 = nn.ReLU()(self.expand_conv1_1(x3))
         x3 = nn.ReLU()(self.expand_conv1_2(x3))
         x3 = nn.ReLU()(self.expand_conv1_3(x3))
 
         # Output
-        x_out = torch.sigmoid(self.final_conv(x3))
+        x_out = self.final_conv(x3)
         
         return x_out
 
@@ -88,7 +266,6 @@ class UNet2D(nn.Module):
                 
                 center_crop = transforms.CenterCrop((outputs.shape[-1], outputs.shape[-1]))
                 resized_masks = center_crop(masks)
-
                 loss = -1 * dice_coefficient(outputs, resized_masks).mean()
                 loss.backward()
                 optimizer.step()
