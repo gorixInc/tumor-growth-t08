@@ -1,7 +1,6 @@
 manifest*
 raw_data*
 2d_dataset
-2d_dataset*
 *.zip
 *.dcm
 *.nii

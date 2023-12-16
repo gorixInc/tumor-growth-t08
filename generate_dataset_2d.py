@@ -80,7 +80,8 @@ def load_data_2d(metadata_df):
         y.append(Xy[1])
     return X, y
 # %%
-X, y = load_data_2d(df.iloc[np.random.randint(0, len(df), 10)])
+meta_df = pd.read_csv('2d_dataset/dataset_meta.csv')
+X, y = load_data_2d(meta_df.iloc[np.random.randint(0, len(meta_df), 10)])
 for i in range(10):
     fig, ax = plt.subplots(1, 2)
     ax[0].imshow(X[i])
