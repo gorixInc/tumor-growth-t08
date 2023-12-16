@@ -5,40 +5,43 @@ from torchvision import transforms
 
 class UNet2D(nn.Module):
     def __init__(self):
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
         super(UNet2D, self).__init__()
         n_filters = 128
 
         # Convolutional layers with kernel size 3 and no padding (valid)
         # Encoder
-        self.enc_conv1_1 = nn.Conv2d(1, n_filters, kernel_size=3, padding='valid')
-        self.enc_conv1_2 = nn.Conv2d(n_filters, n_filters, kernel_size=3, padding='valid')
-        self.enc_conv1_3 = nn.Conv2d(n_filters, n_filters, kernel_size=3, padding='valid')
+        self.enc_conv1_1 = nn.Conv2d(1, n_filters, kernel_size=3, padding='valid', device=self.device)
+        self.enc_conv1_2 = nn.Conv2d(n_filters, n_filters, kernel_size=3, padding='valid', device=self.device)
+        self.enc_conv1_3 = nn.Conv2d(n_filters, n_filters, kernel_size=3, padding='valid', device=self.device)
 
         # Max pooling
         self.pool1 = nn.MaxPool2d(kernel_size=2)
 
         # Middle encoder layers
-        self.encode_conv1 = nn.Conv2d(n_filters, n_filters, kernel_size=3, padding='valid')
-        self.encode_conv2 = nn.Conv2d(n_filters, n_filters, kernel_size=3, padding='valid')
-        self.encode_conv3 = nn.Conv2d(n_filters, n_filters, kernel_size=3, padding='valid')
-        self.encode_conv4 = nn.Conv2d(n_filters, n_filters, kernel_size=3, padding='valid')
+        self.encode_conv1 = nn.Conv2d(n_filters, n_filters, kernel_size=3, padding='valid', device=self.device)
+        self.encode_conv2 = nn.Conv2d(n_filters, n_filters, kernel_size=3, padding='valid', device=self.device)
+        self.encode_conv3 = nn.Conv2d(n_filters, n_filters, kernel_size=3, padding='valid', device=self.device)
+        self.encode_conv4 = nn.Conv2d(n_filters, n_filters, kernel_size=3, padding='valid', device=self.device)
 
         # Dropout
         self.dropout1 = nn.Dropout()
 
         # Upscaling
-        self.upscale1 = nn.ConvTranspose2d(n_filters, n_filters, kernel_size=2, stride=2)
+        self.upscale1 = nn.ConvTranspose2d(n_filters, n_filters, kernel_size=2, stride=2, device=self.device)
 
         # Concatenation and Expansion
-        self.expand_conv1_1 = nn.Conv2d(2 * n_filters, 2 * n_filters, kernel_size=3, padding='valid')
-        self.expand_conv1_2 = nn.Conv2d(2 * n_filters, 2 * n_filters, kernel_size=3, padding='valid')
-        self.expand_conv1_3 = nn.Conv2d(2 * n_filters, n_filters, kernel_size=3, padding='valid')
+        self.expand_conv1_1 = nn.Conv2d(2 * n_filters, 2 * n_filters, kernel_size=3, padding='valid', device=self.device)
+        self.expand_conv1_2 = nn.Conv2d(2 * n_filters, 2 * n_filters, kernel_size=3, padding='valid', device=self.device)
+        self.expand_conv1_3 = nn.Conv2d(2 * n_filters, n_filters, kernel_size=3, padding='valid', device=self.device)
 
         # Final convolutional layer
-        self.final_conv = nn.Conv2d(n_filters, 1, kernel_size=1)
+        self.final_conv = nn.Conv2d(n_filters, 1, kernel_size=1, device=self.device)
 
     def forward(self, x):
         # Encoder
+        x = x.to(self.device)
         x1 = nn.ReLU()(self.enc_conv1_1(x))
         x1 = nn.ReLU()(self.enc_conv1_2(x1))
         x1 = nn.ReLU()(self.enc_conv1_3(x1))
@@ -79,7 +82,7 @@ class UNet2D(nn.Module):
             for i, (images, masks) in enumerate(train_loader):
                 images, masks = images.float().to(device), masks.to(device)
                 optimizer.zero_grad()
-                outputs = self(images)
+                outputs = self.forward(images)
                 
                 center_crop = transforms.CenterCrop((outputs.shape[-1], outputs.shape[-1]))
                 resized_masks = center_crop(masks)

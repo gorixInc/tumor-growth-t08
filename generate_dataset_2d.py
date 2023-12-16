@@ -88,3 +88,7 @@ for i in range(10):
     ax[1].imshow(y[i])
 
 # %%
+Xy = np.load(meta_df['Xy_path'].iloc[0])
+# %%
+Xy.shape
+# %%
