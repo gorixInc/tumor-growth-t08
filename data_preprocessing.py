@@ -15,14 +15,14 @@ class MRIScansPatchDataset(Dataset):
     def __getitem__(self, idx):
         image = self.images[idx]
         mask = self.masks[idx]
-
+        #print(image.shape, mask.shape)
         centroid = center_of_mass(mask)
+        
         image_patch, mask_patch = self.extract_patch(image, mask, centroid)
-
         if self.transform:
             image_patch = self.transform(image_patch)
             mask_patch = self.transform(mask_patch)
-
+        
         return image_patch[np.newaxis, ...], mask_patch[np.newaxis, ...]
 
     def extract_patch(self, image, mask, centroid):

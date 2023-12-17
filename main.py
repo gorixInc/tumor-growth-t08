@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader 
 from torchvision import transforms
-from model import UNet2D, Unet2D_v2
+from model import UNet2D, Unet2D_v2, Unet_classic
 from data_preprocessing import MRIScansPatchDataset
 import matplotlib.pyplot as plt
 import os 
@@ -13,12 +13,12 @@ def train_model(model):
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device {DEVICE}.")
     BATCH_SIZE = 32
-    PATCH_SIZE = 100
-    TRAIN_EPOCHS = 5
+    PATCH_SIZE = 96
+    TRAIN_EPOCHS = 1
 
     X = []
     y = []
-    for i in range(100):
+    for i in range(200):
         X.append(np.load(f'./2d_dataset/data/Xy_{i}.npy')[0])
         y.append(np.load(f'./2d_dataset/data/Xy_{i}.npy')[1]) 
     
@@ -39,15 +39,17 @@ def train_model(model):
 if __name__ == "__main__":
     model = Unet2D_v2()
     train_model(model)
+
 # %%
-X_raw = np.load(f'./2d_dataset/data/Xy_{20}.npy')[0]
+X_raw = np.load(f'./2d_dataset/data/Xy_{1}.npy')[0]
 X = X_raw[np.newaxis, np.newaxis, ...]
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-output = model.forward(torch.tensor(X).to(DEVICE).float()).cpu()
+output = model.forward(torch.tensor
+                       (X).to(DEVICE).float()).cpu()
 segm = output.detach().numpy()[0][0]
 fig, ax = plt.subplots(1, 2)
 ax[0].imshow(X_raw)
-segm[np.where(segm < 0.5)] = 0
+segm[np.where(segm < 2)] = 0
 ax[1].imshow(segm)
 fig.tight_layout()
 # %%
@@ -73,8 +75,15 @@ for i, (images, masks) in enumerate(train_loader):
     output = model.forward(images_inp).cpu()
     segm = output.detach().numpy()[0][0]
     fig, ax = plt.subplots(1, 3)
-    ax[0].imshow(segm)
-    ax[0].imshow(images[0][0])
-    ax[1].imshow(masks[0][0])
-    ax[2].imshow(segm)        
+    #ax[0].imshow(segm)
+    #ax[0].imshow(images[0][0])
+    #ax[1].imshow(masks[0][0])
+    #ax[2].imshow(segm)        
+
+    center_crop = transforms.CenterCrop((output.shape[-1], output.shape[-1]))
+    resized_masks = center_crop(masks)
+
+    ax[0].imshow(masks[0][0])
+    ax[1].imshow(resized_masks[0][0])
+    ax[2].imshow(segm)
 # %%
