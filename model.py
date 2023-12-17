@@ -108,8 +108,6 @@ class Unet2D_v2(nn.Module):
                    print(f'Epoch : {epoch} [{i * len(images)}/{len(train_loader.dataset)} ({100. * i / len(train_loader):.0f}%)]\tLoss: {loss:.6f}')
 
 
-
-
 class ConvStack(nn.Module):
     def __init__(self, in_channels, out_channels, device) -> None:
         super().__init__()
