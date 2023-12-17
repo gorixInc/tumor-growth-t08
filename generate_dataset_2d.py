@@ -80,6 +80,7 @@ def load_data_2d(metadata_df):
         y.append(Xy[1])
     return X, y
 # %%
+# plot annotation
 meta_df = pd.read_csv('2d_dataset/dataset_meta.csv')
 X, y = load_data_2d(meta_df.iloc[np.random.randint(0, len(meta_df), 10)])
 for i in range(10):
@@ -87,8 +88,4 @@ for i in range(10):
     ax[0].imshow(X[i])
     ax[1].imshow(y[i])
 
-# %%
-Xy = np.load(meta_df['Xy_path'].iloc[0])
-# %%
-Xy.shape
-# %%
+
