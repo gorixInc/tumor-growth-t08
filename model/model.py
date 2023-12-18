@@ -92,7 +92,7 @@ class OutConv(nn.Module):
         x = self.conv(x)
         return x
 
-# Original unet https://arxiv.org/abs/1505.04597, https://github.com/milesial/Pytorch-UNet
+# Original unet with batchnorm https://arxiv.org/abs/1505.04597, https://github.com/milesial/Pytorch-UNet
 class Unet2D_v2(nn.Module):
     def __init__(self, do_softmax=False):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
