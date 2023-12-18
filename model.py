@@ -3,9 +3,44 @@ import torch.nn as nn
 import torch
 from torchvision import transforms
 import torch.nn.functional as F
+import numpy as np
 
 def dice_loss(outputs, masks): 
     return -1 * dice_coefficient(outputs, masks).mean()
+
+def dice_loss2(outputs, inputs):
+    intersect = torch.sum(outputs*inputs)
+    fsum = torch.sum(outputs)
+    ssum = torch.sum(inputs)
+    dice = (2 * intersect ) / (fsum + ssum)
+    dice = torch.mean(dice) 
+    return -dice    
+
+def fit_model(model, train_loader, num_epochs, device, verbose=True, optimizer=None, lr=1e-4, 
+              loss_func=None, softmax=False):
+    if optimizer is None:    
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    if loss_func is None:
+        loss_func = dice_loss2
+    
+    for epoch in range(num_epochs):
+        model.train()
+        for i, (images, masks) in enumerate(train_loader):
+            images, masks = images.float().to(device), masks.to(device)
+            optimizer.zero_grad()
+            outputs = model.forward(images)
+            center_crop = transforms.CenterCrop((outputs.shape[-2], outputs.shape[-1]))
+            resized_masks = center_crop(masks)
+            
+            if softmax: 
+                resized_masks = nn.Softmax2d()(resized_masks)
+
+            loss = loss_func(outputs, resized_masks)
+            loss.backward()
+            optimizer.step()
+
+            if verbose and i % 1 == 0:
+                print(f'Epoch : {epoch} [{i * len(images)}/{len(train_loader.dataset)} ({100. * i / len(train_loader):.0f}%)]\tLoss: {loss:.6f}')
 
 class DoubleConv(nn.Module):
     def __init__(self, in_filters, out_filters, device):
@@ -57,7 +92,7 @@ class OutConv(nn.Module):
         x = self.conv(x)
         return x
 
-
+# Original unet 
 class Unet2D_v2(nn.Module):
     def __init__(self, do_softmax=False):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -73,7 +108,6 @@ class Unet2D_v2(nn.Module):
 
     def forward(self, x):
         x1 = self.input_conv(x)
-
         x2 = self.comp1(x1)
         x3 = self.comp2(x2)
         x = self.exp1(x2, x3)
@@ -82,30 +116,6 @@ class Unet2D_v2(nn.Module):
         if self.do_softmax:
             out = self.softmax(out)
         return out
-
-    def fit(self, train_loader, num_epochs, device, patch_size, verbose=True, lr=1e-4,
-            loss_func=None, softmax=False):
-        optimizer = torch.optim.Adam(self.parameters())
-        if loss_func is None:
-            loss_func = dice_loss
-        for epoch in range(num_epochs):
-            self.train()
-            for i, (images, masks) in enumerate(train_loader):
-                images, masks = images.float().to(device), masks.to(device)
-                optimizer.zero_grad()
-                outputs = self.forward(images)
-                center_crop = transforms.CenterCrop((outputs.shape[-1], outputs.shape[-1]))
-                resized_masks = center_crop(masks)
-                
-                if softmax: 
-                    resized_masks = nn.Softmax2d()(resized_masks)
-
-                loss = loss_func(outputs, torch.tensor(resized_masks).float())
-                loss.backward()
-                optimizer.step()
-
-                if verbose and i % 1 == 0:
-                   print(f'Epoch : {epoch} [{i * len(images)}/{len(train_loader.dataset)} ({100. * i / len(train_loader):.0f}%)]\tLoss: {loss:.6f}')
 
 
 class ConvStack(nn.Module):
@@ -118,6 +128,8 @@ class ConvStack(nn.Module):
     def forward(self, x):
         return self.f(x)
 
+
+# UNet2D rewritten and with added batchnorm
 class Unet_classic(nn.Module):
     def __init__(self):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -140,6 +152,7 @@ class Unet_classic(nn.Module):
         self.dec_conv3 = ConvStack(2*n_filters, n_filters, device=self.device)
 
         self.final_conv = nn.Conv2d(n_filters, 1, kernel_size=1, device=self.device)
+        self.final_act = nn.ReLU()
     
     def forward(self, x):
         x1 = self.enc_conv11(x)
@@ -162,29 +175,11 @@ class Unet_classic(nn.Module):
         x3 = self.dec_conv3(x3)
 
         x_out = self.final_conv(x3)
+        x_out = self.final_act(x_out)
 
         return x_out
-    
-    def fit(self, train_loader, num_epochs, device, patch_size, verbose=True, lr=1e-4):
-            optimizer = torch.optim.Adam(self.parameters())
-            for epoch in range(num_epochs):
-                self.train()
-                for i, (images, masks) in enumerate(train_loader):
-                    images, masks = images.float().to(device), masks.to(device)
-                    optimizer.zero_grad()
-                    outputs = self.forward(images)
-                    
-                    center_crop = transforms.CenterCrop((outputs.shape[-1], outputs.shape[-1]))
-                    resized_masks = center_crop(masks)
-                    loss = -1 * dice_coefficient(outputs, resized_masks).mean()
-                    loss.backward()
-                    optimizer.step()
 
-                    if verbose and i % 1 == 0:
-                        print(f'Epoch : {epoch} [{i * len(images)}/{len(train_loader.dataset)} ({100. * i / len(train_loader):.0f}%)]\tLoss: {loss:.6f}')
-                        
-
-#class conv2d()
+# First version of the model based on this: https://eliasvansteenkiste.github.io/machine%20learning/lung-cancer-pred/
 class UNet2D(nn.Module):
     def __init__(self):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -252,22 +247,30 @@ class UNet2D(nn.Module):
         x_out = self.final_conv(x3)
         
         return x_out
+    
 
-    def fit(self, train_loader, num_epochs, device, patch_size, verbose=True, lr=1e-4):
-        optimizer = torch.optim.Adam(self.parameters())
-        for epoch in range(num_epochs):
-            self.train()
-            for i, (images, masks) in enumerate(train_loader):
-                images, masks = images.float().to(device), masks.to(device)
-                optimizer.zero_grad()
-                outputs = self.forward(images)
-                
-                center_crop = transforms.CenterCrop((outputs.shape[-1], outputs.shape[-1]))
-                resized_masks = center_crop(masks)
-                loss = -1 * dice_coefficient(outputs, resized_masks).mean()
-                loss.backward()
-                optimizer.step()
+def predict(model, X, device, patch_size, encoder_size, mid_size, decoder_size):
+    model.eval()
+    predicted_scans = []
+    stride = patch_size - 2 * encoder_size - 4 * mid_size - 2 * decoder_size
+    compression = encoder_size + 2 * mid_size + decoder_size
 
-                if verbose and i % 1 == 0:
-                   print(f'Epoch : {epoch} [{i * len(images)}/{len(train_loader.dataset)} ({100. * i / len(train_loader):.0f}%)]\tLoss: {loss:.6f}')
-                    
+    for image in X:
+        image = torch.from_numpy(image[np.newaxis, np.newaxis, ...]).float()
+        H, W = image.shape[-2], image.shape[-1]
+        output_scan = torch.zeros_like(image)
+
+        for y in range(0, H, stride):
+            for x in range(0, W, stride):
+                if y + patch_size > H or x + patch_size > W:
+                    continue
+
+                patch = image[:, :, y:y+patch_size, x:x+patch_size]
+                patch = patch.to(device)
+                output_patch = model(patch)
+
+                output_scan[:, :, y+compression:y+compression+stride, x+compression:x+compression+stride] = output_patch.unsqueeze(0).unsqueeze(0)
+
+        predicted_scans.append(output_scan)
+
+    return torch.cat(predicted_scans, dim=0)  

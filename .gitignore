@@ -4,3 +4,10 @@ raw_data*
 *.zip
 *.dcm
 *.nii
+2d_dataset*
+relu_full
+relu_patch
+patches
+patcehs_full
+*.jpg
+*.png
