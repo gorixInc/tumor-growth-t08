@@ -4,7 +4,7 @@ import torch
 from torch.utils.data import DataLoader 
 from torchvision import transforms
 from model import UNet2D, Unet2D_v2, Unet_classic, fit_model
-from data_preprocessing import MRIScansPatchDataset
+from data.data_preprocessing import MRIScansPatchDataset
 import matplotlib.pyplot as plt
 from torch.nn.functional import pad
 import os 
@@ -145,15 +145,3 @@ for i, (images, masks) in enumerate(train_loader):
     ax[0].set_title('Input')
     ax[1].set_title('Label')
     #ax[2].set_title('Segmentation')
-# %%
-
-total_params = sum(
-	param.numel() for param in model.parameters()
-)
-
-
-
-
-# %%
-total_params
-# %%
