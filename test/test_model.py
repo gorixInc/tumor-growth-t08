@@ -1,3 +1,7 @@
+'''
+Model training pipeline scaffold, not used later
+'''
+
 import torch
 import torch.nn as nn
 import torch.optim as optim

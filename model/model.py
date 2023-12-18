@@ -1,4 +1,4 @@
-from data_preprocessing import dice_coefficient
+from data.data_preprocessing import dice_coefficient
 import torch.nn as nn
 import torch
 from torchvision import transforms
@@ -92,7 +92,7 @@ class OutConv(nn.Module):
         x = self.conv(x)
         return x
 
-# Original unet 
+# Original unet https://arxiv.org/abs/1505.04597, https://github.com/milesial/Pytorch-UNet
 class Unet2D_v2(nn.Module):
     def __init__(self, do_softmax=False):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -129,7 +129,7 @@ class ConvStack(nn.Module):
         return self.f(x)
 
 
-# UNet2D rewritten and with added batchnorm
+# Kaggle competition model rewritten and with added batchnorm, main model used, the 'small model'
 class Unet_classic(nn.Module):
     def __init__(self):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -179,7 +179,7 @@ class Unet_classic(nn.Module):
 
         return x_out
 
-# First version of the model based on this: https://eliasvansteenkiste.github.io/machine%20learning/lung-cancer-pred/
+# First version of the Kaggle competition model based on this: https://eliasvansteenkiste.github.io/machine%20learning/lung-cancer-pred/
 class UNet2D(nn.Module):
     def __init__(self):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -248,7 +248,7 @@ class UNet2D(nn.Module):
         
         return x_out
     
-
+# Predict on larger image using tiling
 def predict(model, X, device, patch_size, encoder_size, mid_size, decoder_size):
     model.eval()
     predicted_scans = []

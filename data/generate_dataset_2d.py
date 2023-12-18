@@ -1,4 +1,7 @@
 # %%
+'''
+More data preprocessing for extracting segmentations, chanign file formats etc.
+'''
 from glob import glob
 import pydicom as dicom
 import pandas as pd

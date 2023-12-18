@@ -13,7 +13,6 @@ from model import predict
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 # %%
 dataset_path = './2d_dataset_norm/*'
-# %%
 random_inds = np.random.randint(0, 1200, size=200)
 # %%
 def train_model(model):
