@@ -45,6 +45,7 @@ if __name__ == "__main__":
     train_model(model)
 
 # %%
+# Dirty code for visualisations
 random_inds2 = np.random.randint(0, 1200, size=200)
 random_inds2 = [i for i in random_inds2 if i not in random_inds]
 crop_x = 200
